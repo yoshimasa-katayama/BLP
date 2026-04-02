@@ -33,8 +33,6 @@ delta_true <- params1_true[1] * X1 + params1_true[2] * X2 + params1_true[3] * X3
 
 # Simulate nu
 # nu_sim <- alphas - 1
-# nu_sim <- matrix(rlnorm(R, 0, 1), nrow = M, ncol = R, byrow = TRUE)
-# nu_sim <- matrix(rlnorm(M * R, 0, 1), nrow = M, ncol = R)
 u_halton <- as.vector(ghalton(n = R, d = 1))
 nu_sim <- matrix(qlnorm(u_halton, meanlog = 0, sdlog = 1), nrow = M, ncol = R, byrow = TRUE)
 
