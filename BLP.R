@@ -195,9 +195,9 @@ GMM_obj <- function(params2, df, nu_sim, W) {
 GMM_obj(params2_true, df, nu_sim, W)
 
 # Optimization with identity weighting matrix
-gmm_fit <- optim(par=0.8, GMM_obj, method="L-BFGS-B", lower=0, upper=Inf,
+gmm_fit <- optim(par=5, GMM_obj, method="L-BFGS-B", lower=0, upper=Inf,
                  df=df, nu_sim=nu_sim, W=W,
-                 control=list(fnscale = 1, maxit  = 200000, trace = 1,REPORT = 1), 
+                 control=list(fnscale = 1, maxit  = 200000, trace = 1, REPORT = 1), 
                  hessian=FALSE)
 
 # Estimated parameters
@@ -223,9 +223,50 @@ W_opt <- compute_optimal_weight(gmm_fit$par, df, nu_sim)
 # Optimization with optimal weighting matrix
 gmm_fit_opt <- optim(par=gmm_fit$par, GMM_obj, method="L-BFGS-B", lower=0, upper=Inf,
                  df=df, nu_sim=nu_sim, W=W_opt,
-                 control=list(fnscale = 1, maxit  = 200000, trace = 1,REPORT = 1), 
+                 control=list(fnscale = 1, maxit  = 200000, trace = 1, REPORT = 1), 
                  hessian=FALSE)
 
 # Estimated parameters
 gmm_fit_opt$par
 compute_xi(gmm_fit_opt$par, df, nu_sim)[["theta1_hat"]]
+
+# Compute SE of sigma_alpha
+compute_se_sigma_alpha <- function(params2, df, nu_sim, W_opt) {
+  
+  # Jacobian of moment
+  G <- numDeriv::jacobian(func = compute_moment, x = params2, df = df, nu_sim = nu_sim)
+  
+  # Asymptotic variance
+  V_sigma <- solve(t(G) %*% W_opt %*% G) / N
+  
+  # Return
+  list(se_sigma = sqrt(diag(V_sigma)), V_sigma = V_sigma)
+}
+
+# Compute SE of sigma_alpha
+compute_se_sigma_alpha(gmm_fit_opt$par, df, nu_sim, W_opt)[["se_sigma"]]
+
+# Write theta1 as a function of sigma_alpha
+theta1_of_sigma <- function(params2, df, nu_sim) {
+  compute_xi(params2, df, nu_sim)[["theta1_hat"]]
+}
+
+# Compute SE of theta1
+compute_se_theta1 <- function(params2, df, nu_sim, W_opt) {
+  
+  # Obtain Var of sigma_alpha
+  V_sigma <- compute_se_sigma_alpha(params2, df, nu_sim, W_opt)[["V_sigma"]]
+  
+  # Jacobian
+  H <- numDeriv::jacobian(func = theta1_of_sigma, x = params2, df = df, nu_sim = nu_sim)
+  
+  # Delta method
+  V_theta1 <- H %*% V_sigma %*% t(H)
+  se_theta1 <- sqrt(diag(V_theta1))
+  
+  # Return
+  return(se_theta1)
+}
+
+# Compute SE of theta1
+compute_se_theta1(gmm_fit_opt$par, df, nu_sim, W_opt)
