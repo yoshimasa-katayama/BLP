@@ -1,2 +1,2 @@
 # Replication
-* `BLP.r` estimates demand.
+* `BLP.R` estimates demand.
