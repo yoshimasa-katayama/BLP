@@ -518,7 +518,7 @@ compute_se_theta12 <- function(theta3, df, nu_sim, W_opt, conduct = c("pc", "oli
   return(se_theta12)
 }
 
-# Compute SE of theta1 and theta2
+# Compute SE of theta1 and theta2 (needs to be fixed)
 compute_se_theta12(gmm_fit_opt_pc$par, df, nu_sim, W_opt_pc, "pc")
 compute_se_theta12(gmm_fit_opt_oligopoly$par, df, nu_sim, W_opt_oligopoly, "oligopoly")
 compute_se_theta12(gmm_fit_opt_monopoly$par, df, nu_sim, W_opt_monopoly, "monopoly")
