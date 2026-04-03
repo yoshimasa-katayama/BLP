@@ -364,24 +364,6 @@ GMM_obj <- function(theta3, df, nu_sim, W, conduct = c("pc", "oligopoly", "monop
 # GMM objective function at true values
 GMM_obj(theta3_true, df, nu_sim, W, "oligopoly")
 
-# Oligopoly: optimization with identity weighting matrix
-gmm_fit_oligopoly <- optim(par=5, GMM_obj, method="L-BFGS-B", lower=0, upper=Inf,
-                           df=df, nu_sim=nu_sim, W=W, conduct="oligopoly",
-                           control=list(fnscale = 1, maxit  = 200000, trace = 1, REPORT = 1), 
-                           hessian=FALSE)
-
-# Oligopoly: estimated parameters
-theta3_hat <- gmm_fit_oligopoly$par
-out_compute_xi <- compute_xi(gmm_fit_oligopoly$par, df, nu_sim)
-out_compute_eta <- compute_eta(gmm_fit_oligopoly$par, df, nu_sim, "oligopoly")
-theta3_hat
-out_compute_xi[["theta1_hat"]]
-out_compute_eta[["theta2_hat"]]
-
-# Save estimates
-saveRDS(list(theta1_hat = out_compute_xi[["theta1_hat"]], theta2_hat = out_compute_eta[["theta2_hat"]], theta3_hat = theta3_hat,
-             xi_hat = out_compute_xi[["xi_hat"]], mc_hat = out_compute_eta[["mc_hat"]]), file = "output/estimates.rds")
-
 # Perfect competition: optimization with identity weighting matrix
 gmm_fit_pc <- optim(par=5, GMM_obj, method="L-BFGS-B", lower=0, upper=Inf,
                     df=df, nu_sim=nu_sim, W=W, conduct="pc",
@@ -393,14 +375,157 @@ gmm_fit_pc$par
 compute_xi(gmm_fit_pc$par, df, nu_sim)[["theta1_hat"]]
 compute_eta(gmm_fit_pc$par, df, nu_sim, "pc")[["theta2_hat"]]
 
+# Oligopoly: optimization with identity weighting matrix
+gmm_fit_oligopoly <- optim(par=5, GMM_obj, method="L-BFGS-B", lower=0, upper=Inf,
+                           df=df, nu_sim=nu_sim, W=W, conduct="oligopoly",
+                           control=list(fnscale = 1, maxit  = 200000, trace = 1, REPORT = 1), 
+                           hessian=FALSE)
+
+# Oligopoly: estimated parameters
+gmm_fit_oligopoly$par
+compute_xi(gmm_fit_oligopoly$par, df, nu_sim)[["theta1_hat"]]
+compute_eta(gmm_fit_oligopoly$par, df, nu_sim, "oligopoly")[["theta2_hat"]]
+
 # Monopoly: optimization with identity weighting matrix
 gmm_fit_monopoly <- optim(par=5, GMM_obj, method="L-BFGS-B", lower=0, upper=Inf,
-                    df=df, nu_sim=nu_sim, W=W, conduct="monopoly",
-                    control=list(fnscale = 1, maxit  = 200000, trace = 1, REPORT = 1), 
-                    hessian=FALSE)
+                          df=df, nu_sim=nu_sim, W=W, conduct="monopoly",
+                          control=list(fnscale = 1, maxit  = 200000, trace = 1, REPORT = 1), 
+                          hessian=FALSE)
 
 # Monopoly: estimated parameters
 gmm_fit_monopoly$par
 compute_xi(gmm_fit_monopoly$par, df, nu_sim)[["theta1_hat"]]
 compute_eta(gmm_fit_monopoly$par, df, nu_sim, "monopoly")[["theta2_hat"]]
+
+# Compute optimal weighting matrix
+compute_optimal_weight <- function(theta3, df, nu_sim, conduct = c("pc", "oligopoly", "monopoly")) {
+  
+  # Conduct
+  conduct <- match.arg(conduct)
+  
+  # Compute xi_hat
+  xi_hat <- compute_xi(theta3, df, nu_sim)[["xi_hat"]]
+  
+  # Compute eta_hat
+  eta_hat <- compute_eta(theta3, df, nu_sim, conduct)[["eta_hat"]]
+  
+  # Instruments
+  IV <- cbind(df$IV1, df$IV2, df$IV3, df$IV4, df$IV5, df$IV6)
+
+  # Return
+  solve(crossprod(cbind(IV * xi_hat, IV * eta_hat)) / N)
+}
+
+# Compute optimal weighting matrix
+W_opt_pc <- compute_optimal_weight(gmm_fit_pc$par, df, nu_sim, "pc")
+W_opt_oligopoly <- compute_optimal_weight(gmm_fit_oligopoly$par, df, nu_sim, "oligopoly")
+W_opt_monopoly <- compute_optimal_weight(gmm_fit_monopoly$par, df, nu_sim, "monopoly")
+
+# Perfect competition: optimization with optimal weighting matrix
+gmm_fit_opt_pc <- optim(par=gmm_fit_pc$par, GMM_obj, method="L-BFGS-B", lower=0, upper=Inf,
+                        df=df, nu_sim=nu_sim, W=W_opt_pc, conduct="pc",
+                        control=list(fnscale = 1, maxit  = 200000, trace = 1, REPORT = 1), 
+                        hessian=FALSE)
+
+# Perfect competition: estimated parameters
+gmm_fit_opt_pc$par
+compute_xi(gmm_fit_opt_pc$par, df, nu_sim)[["theta1_hat"]]
+compute_eta(gmm_fit_opt_pc$par, df, nu_sim, "pc")[["theta2_hat"]]
+
+# Oligopoly: optimization with optimal weighting matrix
+gmm_fit_opt_oligopoly <- optim(par=gmm_fit_oligopoly$par, GMM_obj, method="L-BFGS-B", lower=0, upper=Inf,
+                               df=df, nu_sim=nu_sim, W=W_opt_oligopoly, conduct="oligopoly",
+                               control=list(fnscale = 1, maxit  = 200000, trace = 1, REPORT = 1), 
+                               hessian=FALSE)
+
+# Oligopoly: estimated parameters
+theta3_hat <- gmm_fit_opt_oligopoly$par
+out_compute_xi <- compute_xi(gmm_fit_opt_oligopoly$par, df, nu_sim)
+out_compute_eta <- compute_eta(gmm_fit_opt_oligopoly$par, df, nu_sim, "oligopoly")
+theta3_hat
+out_compute_xi[["theta1_hat"]]
+out_compute_eta[["theta2_hat"]]
+
+# Save estimates
+saveRDS(list(theta1_hat = out_compute_xi[["theta1_hat"]], theta2_hat = out_compute_eta[["theta2_hat"]], theta3_hat = theta3_hat,
+             xi_hat = out_compute_xi[["xi_hat"]], mc_hat = out_compute_eta[["mc_hat"]]), file = "output/estimates.rds")
+
+# Monopoly: optimization with optimal weighting matrix
+gmm_fit_opt_monopoly <- optim(par=gmm_fit_monopoly$par, GMM_obj, method="L-BFGS-B", lower=0, upper=Inf,
+                              df=df, nu_sim=nu_sim, W=W_opt_monopoly, conduct="monopoly",
+                              control=list(fnscale = 1, maxit  = 200000, trace = 1, REPORT = 1), 
+                              hessian=FALSE)
+
+# Monopoly: estimated parameters
+gmm_fit_opt_monopoly$par
+compute_xi(gmm_fit_opt_monopoly$par, df, nu_sim)[["theta1_hat"]]
+compute_eta(gmm_fit_opt_monopoly$par, df, nu_sim, "monopoly")[["theta2_hat"]]
+
+# Compute SE of sigma_alpha
+compute_se_sigma_alpha <- function(theta3, df, nu_sim, W_opt, conduct = c("pc", "oligopoly", "monopoly")) {
+  
+  # Conduct
+  conduct <- match.arg(conduct)
+  
+  # Jacobian of moment
+  G <- numDeriv::jacobian(func = compute_moment, x = theta3, df = df, nu_sim = nu_sim, conduct = conduct)
+  
+  # Asymptotic variance-covariance matrix
+  V_sigma <- solve(t(G) %*% W_opt %*% G) / N
+  
+  # Return
+  list(se_sigma = sqrt(diag(V_sigma)), V_sigma = V_sigma)
+}
+
+# Compute SE of sigma_alpha
+compute_se_sigma_alpha(gmm_fit_opt_pc$par, df, nu_sim, W_opt_pc, "pc")[["se_sigma"]]
+compute_se_sigma_alpha(gmm_fit_opt_oligopoly$par, df, nu_sim, W_opt_oligopoly, "oligopoly")[["se_sigma"]]
+compute_se_sigma_alpha(gmm_fit_opt_monopoly$par, df, nu_sim, W_opt_monopoly, "monopoly")[["se_sigma"]]
+
+# Write theta1 and theta2 as a function of sigma_alpha
+theta12_of_sigma <- function(theta3, df, nu_sim, conduct = c("pc", "oligopoly", "monopoly")) {
+  
+  # Conduct
+  conduct <- match.arg(conduct)
+  
+  # theta1_hat
+  theta1_hat <- compute_xi(theta3, df, nu_sim)[["theta1_hat"]]
+  
+  # theta2_hat
+  theta2_hat <- compute_eta(theta3, df, nu_sim, conduct)[["theta2_hat"]]
+  
+  # Return
+  c(theta1_hat, theta2_hat)
+}
+
+# Compute SE of theta1 and theta2
+compute_se_theta12 <- function(theta3, df, nu_sim, W_opt, conduct = c("pc", "oligopoly", "monopoly")) {
+  
+  # Conduct
+  conduct <- match.arg(conduct)
+  
+  # Obtain Var of sigma_alpha
+  V_sigma <- compute_se_sigma_alpha(theta3, df, nu_sim, W_opt, conduct)[["V_sigma"]]
+  
+  # Jacobian
+  H <- numDeriv::jacobian(func = theta12_of_sigma, x = theta3, df = df, nu_sim = nu_sim, conduct = conduct)
+  
+  # Delta method
+  V_theta12 <- H %*% V_sigma %*% t(H)
+  se_theta12 <- sqrt(diag(V_theta12))
+  
+  # Return
+  return(se_theta12)
+}
+
+# Compute SE of theta1 and theta2
+compute_se_theta12(gmm_fit_opt_pc$par, df, nu_sim, W_opt_pc, "pc")
+compute_se_theta12(gmm_fit_opt_oligopoly$par, df, nu_sim, W_opt_oligopoly, "oligopoly")
+compute_se_theta12(gmm_fit_opt_monopoly$par, df, nu_sim, W_opt_monopoly, "monopoly")
+
+
+
+
+
+
 
