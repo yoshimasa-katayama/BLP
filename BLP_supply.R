@@ -46,6 +46,7 @@ IV6 <- w
 u_halton <- as.vector(ghalton(n = R, d = 1))
 nu_sim <- matrix(qlnorm(u_halton, meanlog = 0, sdlog = 1), nrow = M, ncol = R, byrow = TRUE)
 
+# Dataframe
 df <- data.frame(
   market        = rep(1:M, each = J),
   product       = rep(1:J, times = M),
@@ -370,9 +371,16 @@ gmm_fit_oligopoly <- optim(par=5, GMM_obj, method="L-BFGS-B", lower=0, upper=Inf
                            hessian=FALSE)
 
 # Oligopoly: estimated parameters
-gmm_fit_oligopoly$par
-compute_xi(gmm_fit_oligopoly$par, df, nu_sim)[["theta1_hat"]]
-compute_eta(gmm_fit_oligopoly$par, df, nu_sim, "oligopoly")[["theta2_hat"]]
+theta3_hat <- gmm_fit_oligopoly$par
+out_compute_xi <- compute_xi(gmm_fit_oligopoly$par, df, nu_sim)
+out_compute_eta <- compute_eta(gmm_fit_oligopoly$par, df, nu_sim, "oligopoly")
+theta3_hat
+out_compute_xi[["theta1_hat"]]
+out_compute_eta[["theta2_hat"]]
+
+# Save estimates
+saveRDS(list(theta1_hat = out_compute_xi[["theta1_hat"]], theta2_hat = out_compute_eta[["theta2_hat"]], theta3_hat = theta3_hat,
+             xi_hat = out_compute_xi[["xi_hat"]], mc_hat = out_compute_eta[["mc_hat"]]), file = "output/estimates.rds")
 
 # Perfect competition: optimization with identity weighting matrix
 gmm_fit_pc <- optim(par=5, GMM_obj, method="L-BFGS-B", lower=0, upper=Inf,
