@@ -57,8 +57,19 @@ index_theta <- 1:K
 index_xi    <- (K + 1):(K + N)
 index_g     <- (K + N + 1):(K + N + L)
 
-# ipoptr does not take Jacobian and Hessian as matrices
-# It takes a vector of nonzero elements for Jacobian and a vectorized lower triangular matrix for Hessian
+# ipoptr does not take the Jacobian and Hessian directly as matrices.
+# Their sparsity structures must be supplied separately as lists.
+#
+# For each structure list, the i-th element gives the column positions of the nonzero entries in row i.
+#
+# Jacobian:
+# - eval_jac_g_structure() returns the sparsity structure as a list
+# - eval_jac_g() returns a vector containing only the nonzero Jacobian entries, ordered row by row according to eval_jac_g_structure()
+#
+# Hessian:
+# - eval_h_structure() returns the sparsity structure of the lower-triangular part as a list
+# - eval_h() returns a vector containing only the nonzero lower-triangular Hessian entries, ordered row by row according to eval_h_structure()
+
 # Convert symmetric matrix to a vectorized lower triangular matrix
 matrix_to_lower_triangular_vector <- function(M) {
   unlist(lapply(seq_len(nrow(M)), function(i) M[i, seq_len(i)]), use.names = FALSE)
@@ -156,20 +167,20 @@ eval_g <- function(x) {
 }
 
 # Sparsity structures of constraint jacobian
-jac_structure <- vector("list", N + L)     # Column numbers with nonzero element for (N + L) rows, (N + L) is the number of constraints
+eval_jac_g_structure <- vector("list", N + L)     # Column numbers with nonzero element for (N + L) rows, (N + L) is the number of constraints
 
 # Shares in a market depends on theta and xi in the market, but not depend on xi in the other markets nor g
 for (m in unique(market)) {
   id <- which(market == m)
   for (j in 1:J) {
     row_index <- id[j]
-    jac_structure[[row_index]] <- c(index_theta, K + id)
+    eval_jac_g_structure[[row_index]] <- c(index_theta, K + id)
   }
 }
 
 # l-th moment condition depends on g[l] and all xi, but not depends on theta nor g[k] for k \neq l
 for (l in 1:L) {
-  jac_structure[[N + l]] <- c(index_xi, K + N + l)
+  eval_jac_g_structure[[N + l]] <- c(index_xi, K + N + l)
 }
 
 # Jacobian of constraints
@@ -207,7 +218,7 @@ eval_jac_g <- function(x) {
 }
 
 # Sparsity patters of Lagrangian hessian (lower triangular matrix since hessian is symmetric)
-hess_structure <- lapply(1:(K + N + L), function(i) seq_len(i))
+eval_h_structure <- lapply(1:(K + N + L), function(i) seq_len(i))
 
 # Hessian of Lagrangian
 eval_h <- function(x, obj_factor, hessian_lambda) {
@@ -345,9 +356,9 @@ W <- solve(t(IV) %*% IV)
 
 # Solve optimization problem
 solve_mpec <- ipoptr(x0 = x0, eval_f = eval_f, eval_grad_f = eval_grad_f, lb = rep(-1.0e19, K + N + L), ub = rep(1.0e19, K + N + L),
-                     eval_g = eval_g, eval_jac_g = eval_jac_g, eval_jac_g_structure = jac_structure,
+                     eval_g = eval_g, eval_jac_g = eval_jac_g, eval_jac_g_structure = eval_jac_g_structure,
                      constraint_lb = rep(0, N + L), constraint_ub = rep(0, N + L),
-                     eval_h = eval_h, eval_h_structure = hess_structure,
+                     eval_h = eval_h, eval_h_structure = eval_h_structure,
                      opts = list(print_level = 5, max_iter = 200000, tol = 1e-8, constr_viol_tol = 1e-8, compl_inf_tol = 1e-8, dual_inf_tol = 1e-8, linear_solver = "mumps"))
 
 # Solution
