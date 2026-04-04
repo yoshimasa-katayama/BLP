@@ -55,21 +55,21 @@ index_xi    <- (K + 1):(K + N)
 index_g     <- (K + N + 1):(K + N + L)
 
 # ipoptr does not take Jacobian and Hessian as matrices
-# It takes a vector of nonzero elements for Jacobian and a vectorizeds lower triangular matrix for Hessian
-# Convert symmetrix matrix to a vectorized lower triangular matrix
+# It takes a vector of nonzero elements for Jacobian and a vectorized lower triangular matrix for Hessian
+# Convert symmetric matrix to a vectorized lower triangular matrix
 matrix_to_lower_triangular_vector <- function(M) {
   unlist(lapply(seq_len(nrow(M)), function(i) M[i, seq_len(i)]), use.names = FALSE)
 }
 
-# Convert a vetorized version of a lower triangular matrix to symmetric matrix
-lower_triangular_vector_to_matrix <- function(vals, n) {
+# Convert a vetorized lower triangular matrix to a symmetric matrix
+lower_triangular_vector_to_matrix <- function(v, n) {
   M <- matrix(0, n, n)
-  idx <- 1L
+  index <- 1L
   for (i in seq_len(n)) {
     for (j in seq_len(i)) {
-      M[i, j] <- vals[idx]
-      M[j, i] <- vals[idx]
-      idx <- idx + 1L
+      M[i, j] <- v[index]
+      M[j, i] <- v[index]
+      index <- index + 1L
     }
   }
   M
@@ -77,15 +77,15 @@ lower_triangular_vector_to_matrix <- function(vals, n) {
 
 # Convert a vectorized Jacobian to matrix
 jacobian_vector_to_matrix <- function(jac_structure, jac_values, nrow_jac, ncol_jac) {
-  Jmat <- matrix(0, nrow = nrow_jac, ncol = ncol_jac)
-  idx <- 1L
+  Jac <- matrix(0, nrow = nrow_jac, ncol = ncol_jac)
+  index <- 1L
   for (r in seq_len(nrow_jac)) {
-    cols <- jac_structure[[r]]
-    k <- length(cols)
-    Jmat[r, cols] <- jac_values[idx:(idx + k - 1L)]
-    idx <- idx + k
+    cols         <- jac_structure[[r]]
+    k            <- length(cols)
+    Jac[r, cols] <- jac_values[index:(index + k - 1L)]
+    index.       <- index + k
   }
-  Jmat
+  Jac
 }
 
 # Compute shares and jacobians w.r.t theta and xi
