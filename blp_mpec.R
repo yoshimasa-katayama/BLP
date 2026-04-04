@@ -1,4 +1,4 @@
-# Reference: Dube, Fox, and Su (2012): “Supplement to ‘Improving the Numerical Performance of Static and Dynamic Aggregate Discrete Choice Random Coefficients Demand Estimation’,” Econometrica Supplemental Material.
+# Reference: Dube, Fox, and Su (2012) “Supplement to ‘Improving the Numerical Performance of Static and Dynamic Aggregate Discrete Choice Random Coefficients Demand Estimation’,” Econometrica Supplemental Material.
 # Setup
 rm(list = ls())
 set.seed(1)
