@@ -108,7 +108,7 @@ compute_share_and_jacobian <- function(theta, xi) {
     for (r in 1:R) {
       # Jacobian of individual choice probability w.r.t. individual utility
       T_r <- T_m[, r]
-      A_r <- diag(T_r) - (T_r %*% t(T_r))
+      A_r <- diag(T_r) - tcrossprod(T_r, T_r)
       
       # Jacobian of individual utility w.r.t theta and xi
       D_r <- cbind(x1_m, x2_m, x3_m, -p_m, -p_m * nu_m[r], diag(J))
@@ -245,7 +245,7 @@ eval_h <- function(x, obj_factor, hessian_lambda) {
       phi_r <- sum(lambda_m * T_r)
       q_r   <- T_r * (lambda_m - phi_r)
       
-      H_U_r <- diag(q_r) - T_r %*% t(q_r) - q_r %*% t(T_r)
+      H_U_r <- diag(q_r) - tcrossprod(T_r, q_r) - tcrossprod(q_r, T_r)
       
       D_r <- cbind(x1_m, x2_m, x3_m, -p_m, -p_m * nu_m[r], diag(J))
       
@@ -341,10 +341,10 @@ x0_start_value <- function(sigma_alpha) {
 x0 <- x0_start_value(sigma_alpha0)
 
 # Weighting matrix
-W <- t(IV) %*% IV
+W <- solve(t(IV) %*% IV)
 
 # Solve optimization problem
-solve_mpec <- ipoptr(x0 = x0, eval_f = eval_f, eval_grad_f = eval_grad_f, lb = rep(-Inf, K + N + L), ub = rep(Inf, K + N + L),
+solve_mpec <- ipoptr(x0 = x0, eval_f = eval_f, eval_grad_f = eval_grad_f, lb = rep(-1.0e19, K + N + L), ub = rep(1.0e19, K + N + L),
                      eval_g = eval_g, eval_jac_g = eval_jac_g, eval_jac_g_structure = jac_structure,
                      constraint_lb = rep(0, N + L), constraint_ub = rep(0, N + L),
                      eval_h = eval_h, eval_h_structure = hess_structure,
