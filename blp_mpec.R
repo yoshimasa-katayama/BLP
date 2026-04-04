@@ -70,7 +70,7 @@ lower_triangular_vector_to_matrix <- function(v, n) {
     for (j in seq_len(i)) {
       M[i, j] <- v[index]
       M[j, i] <- v[index]
-      index <- index + 1L
+      index   <- index + 1L
     }
   }
   M
@@ -84,7 +84,7 @@ jacobian_vector_to_matrix <- function(jac_structure, jac_values, nrow_jac, ncol_
     cols         <- jac_structure[[r]]
     k            <- length(cols)
     Jac[r, cols] <- jac_values[index:(index + k - 1L)]
-    index.       <- index + k
+    index        <- index + k
   }
   Jac
 }
