@@ -1,4 +1,7 @@
-# Reference: Dube, Fox, and Su (2012) “Supplement to ‘Improving the Numerical Performance of Static and Dynamic Aggregate Discrete Choice Random Coefficients Demand Estimation’,” Econometrica Supplemental Material.
+# References:
+# Dube, Fox, and Su (2012) “Supplement to ‘Improving the Numerical Performance of Static and Dynamic Aggregate Discrete Choice Random Coefficients Demand Estimation’,” Econometrica Supplemental Material.
+# https://www.jp-dube.com/research/MPECcode.html
+
 # Setup
 rm(list = ls())
 set.seed(1)
@@ -15,8 +18,7 @@ R <- 500              # Number of consumers in each market
 N <- M * J            # Number of observations
 K <- 5                # Number of structural parameters (beta1, beta2, beta3, alpha, sigma_alpha)
 L <- 5                # Number of instruments
-W <- diag(L)          # Identity weight matrix
-sigma_alpha0 <- 5     # Initial guess of sigma_alpha
+sigma_alpha0 <- 3     # Initial guess of sigma_alpha
 
 # Data
 data <- readMat("data/100markets3products.mat")              # Import data
@@ -60,33 +62,6 @@ index_g     <- (K + N + 1):(K + N + L)
 # Convert symmetric matrix to a vectorized lower triangular matrix
 matrix_to_lower_triangular_vector <- function(M) {
   unlist(lapply(seq_len(nrow(M)), function(i) M[i, seq_len(i)]), use.names = FALSE)
-}
-
-# Convert a vetorized lower triangular matrix to a symmetric matrix
-lower_triangular_vector_to_matrix <- function(v, n) {
-  M <- matrix(0, n, n)
-  index <- 1L
-  for (i in seq_len(n)) {
-    for (j in seq_len(i)) {
-      M[i, j] <- v[index]
-      M[j, i] <- v[index]
-      index   <- index + 1L
-    }
-  }
-  M
-}
-
-# Convert a vectorized Jacobian to matrix
-jacobian_vector_to_matrix <- function(jac_structure, jac_values, nrow_jac, ncol_jac) {
-  Jac <- matrix(0, nrow = nrow_jac, ncol = ncol_jac)
-  index <- 1L
-  for (r in seq_len(nrow_jac)) {
-    cols         <- jac_structure[[r]]
-    k            <- length(cols)
-    Jac[r, cols] <- jac_values[index:(index + k - 1L)]
-    index        <- index + k
-  }
-  Jac
 }
 
 # Compute shares and jacobians w.r.t theta and xi
@@ -343,7 +318,7 @@ x0_IV_regression <- function(delta) {
   return(theta_hat)
 }
 
-# Start values for (theta, xi, g) given sigma_alpha
+# Start values for x = (theta, xi, g) given sigma_alpha
 x0_start_value <- function(sigma_alpha) {
   
   # Compute delta_hat
@@ -365,6 +340,9 @@ x0_start_value <- function(sigma_alpha) {
 # Initial guess of x
 x0 <- x0_start_value(sigma_alpha0)
 
+# Weighting matrix
+W <- t(IV) %*% IV
+
 # Solve optimization problem
 solve_mpec <- ipoptr(x0 = x0, eval_f = eval_f, eval_grad_f = eval_grad_f, lb = rep(-Inf, K + N + L), ub = rep(Inf, K + N + L),
                      eval_g = eval_g, eval_jac_g = eval_jac_g, eval_jac_g_structure = jac_structure,
@@ -375,8 +353,85 @@ solve_mpec <- ipoptr(x0 = x0, eval_f = eval_f, eval_grad_f = eval_grad_f, lb = r
 # Solution
 solve_mpec$solution[index_theta]
 
+# Compute SEs
+# Compute jacobian of delta w.r.t sigma_alpha
+compute_jacobian_delta_sigma_alpha <- function(sigma_alpha, delta) {
+  
+  # Jacobian of share w.r.t delta and sigma_alpha
+  jac_sigma_alpha <- numeric(N)
+  jac_delta       <- matrix(0, nrow = N, ncol = N)
+  
+  for (m in unique(market)) {
+    id <- which(market == m)
+    p_m <- p[id]
+    delta_m <- delta[id]
+    nu_m <- nu_sim[m, ]
+    
+    # Individual utility
+    util <- matrix(delta_m, nrow = J, ncol = R, byrow = FALSE) - sigma_alpha * matrix(p_m, nrow = J, ncol = R, byrow = FALSE) * matrix(nu_m, nrow = J, ncol = R, byrow = TRUE)
+    
+    # Individual choice probability
+    numerator <- exp(util)
+    denominator <- 1 + colSums(numerator)
+    T_m <- numerator / matrix(denominator, nrow = J, ncol = R, byrow = TRUE)
+    
+    # Jacobian
+    jac_sigma_alpha_m <- numeric(J)
+    jac_delta_m <- matrix(0, nrow = J, ncol = J)
+    
+    for (r in 1:R) {
+      T_r <- T_m[, r]
+      A_r <- diag(T_r) - (T_r %*% t(T_r))
+      jac_sigma_alpha_m <- jac_sigma_alpha_m + as.vector(A_r %*% (-p_m * nu_m[r])) / R
+      jac_delta_m <- jac_delta_m + A_r / R
+    }
+    
+    jac_sigma_alpha[id] <- jac_sigma_alpha_m
+    jac_delta[id, id] <- jac_delta_m
+  }
+  
+  # Return
+  -solve(jac_delta, jac_sigma_alpha)
+}
 
+# Estimated parameters
+theta1_hat <- solve_mpec$solution[1:(K - 1)]
+sigma_alpha_hat <- solve_mpec$solution[K]
+xi_hat <- solve_mpec$solution[index_xi]
 
+# Compute delta given sigma_alpha_hat
+delta_se <- x0_solve_delta(sigma_alpha_hat)
+
+# Compute xi given delta_se and theta1_hat
+resid_se <- delta_se - theta1_hat[1] * x1 - theta1_hat[2] * x2 - theta1_hat[3] * x3 + theta1_hat[4] * p
+
+# Jacobian of delta w.r.t. sigma_alpha
+jac_delta <- compute_jacobian_delta_sigma_alpha(sigma_alpha_hat, delta_se)
+
+# VC matrix for MPEC structual parameters
+covg <- matrix(0, nrow = L, ncol = L)
+for (i in 1:N) {
+  IV_i <- matrix(IV[i, ], ncol = 1)
+  covg <- covg + (IV_i %*% t(IV_i)) * (resid_se[i]^2)
+}
+
+DX <- cbind(x1, x2, x3, -p, jac_delta)
+Dg <- t(DX) %*% IV
+
+cov_theta <- solve(Dg %*% W %*% t(Dg)) %*% Dg %*% W %*% covg %*% W %*% t(Dg) %*% solve(Dg %*% W %*% t(Dg))
+
+se_theta <- sqrt(diag(cov_theta))
+
+# Results
+results <- data.frame(
+  parameter = c("beta1", "beta2", "beta3", "alpha", "sigma_alpha"),
+  estimate  = solve_mpec$solution[index_theta],
+  true      = c(5, 1, 1, 1, 1),
+  bias      = solve_mpec$solution[index_theta] - c(5, 1, 1, 1, 1),
+  se        = se_theta
+)
+
+print(results, row.names = FALSE)
 
 
 
