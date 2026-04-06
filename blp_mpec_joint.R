@@ -20,6 +20,7 @@
 # Setup
 rm(list = ls())
 set.seed(1)
+setwd("/Users/yoshimasa/Dropbox/Replication/Katayama/BLP")
 
 # Library
 library(ipoptr)
@@ -318,7 +319,7 @@ MPEC <- function(conduct = c("pc", "oligopoly", "monopoly"), Wmat) {
     add_h_nz(blk, blk)
   }
   
-  # FPC block: (alpha, sigma_alpha, delta_m)
+  # FOC block: (alpha, sigma_alpha, delta_m)
   if (conduct != "pc") {
     for (m in unique(market)) {
       id <- which(market == m)
@@ -580,11 +581,11 @@ solve_mpec <- function(conduct = c("pc", "oligopoly", "monopoly"), W_mat) {
       constr_viol_tol = 1e-8,
       compl_inf_tol = 1e-8,
       dual_inf_tol = 1e-8,
-      linear_solver = "mumps",
+      linear_solver = "mumps"
       #derivative_test = "first-order",
       #derivative_test_print_all = "no"
-      derivative_test = "second-order",
-      derivative_test_print_all = "no"
+      #derivative_test = "second-order",
+      #derivative_test_print_all = "no"
     )
   )
   
