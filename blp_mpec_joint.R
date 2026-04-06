@@ -20,7 +20,6 @@
 # Setup
 rm(list = ls())
 set.seed(1)
-setwd("/Users/yoshimasa/Dropbox/Replication/Katayama/BLP")
 
 # Library
 library(ipoptr)
