@@ -17,6 +17,10 @@
 # - supply FOC:       mc = p - markup(alpha, sigma_alpha, delta; conduct)
 # - supply moment:    gs = t(IV) %*% eta / N, where eta = mc - gamma0 - gamma1 * w - gamma2 * z
 
+# R version 4.5.2 (2025-10-31)
+# Platform: aarch64-apple-darwin20
+# Ipopt version 3.14.19, running with linear solver MUMPS 5.6.2
+
 # Setup
 rm(list = ls())
 set.seed(1)
@@ -820,17 +824,121 @@ solve_mpec <- function(conduct = c("pc", "oligopoly", "monopoly"), W_mat) {
   return(result)
 }
 
+# Perfect competition
+x_hat_pc <- solve_mpec("pc", W_gmm)$solution
 
 # Oligopoly
-solve_mpec("oligopoly", W_gmm)$solution[c(index_beta, index_alpha, index_sigma_alpha, index_gamma)]
-
-# Perfect competition
-solve_mpec("pc", W_gmm)$solution[c(index_beta, index_alpha, index_sigma_alpha, index_gamma)]
+x_hat_oligopoly <- solve_mpec("oligopoly", W_gmm)$solution
 
 # Monopoly
-solve_mpec("monopoly", W_gmm)$solution[c(index_beta, index_alpha, index_sigma_alpha, index_gamma)]
+x_hat_monopoly <- solve_mpec("monopoly", W_gmm)$solution
 
+# Jacobian of delta w.r.t. sigma_alpha
+jac_delta_wrt_sigma_alpha <- function(alpha, sigma_alpha, delta) {
+  
+  "
+  This function computes Jacobian of delta w.r.t. sigma_alpha.
+  
+  Arguments:
+  * alpha: scalar
+  * sigma_alpha: scalar
+  * delta: vector with lengh N
+  
+  Returns:
+  * jac: vector with length N
+  "
+  
+  # Prepare
+  jac <- numeric(N)
+  
+  # Loop over markets
+  for (m in unique(market)) {
+    id <- which(market == m)
+    out <- compute_share_and_derivative(alpha, sigma_alpha, delta[id], p[id], nu_sim[m, ])
+    ds_ddelta <- do.call(cbind, lapply(seq_len(J), function(j) out$share1[[j + 2]]))
+    ds_dsigma <- out$share1[[2]]
+    jac[id] <- -solve(ds_ddelta, ds_dsigma)
+  }
+  
+  # Return
+  jac
+}
 
+# Compute SEs
+compute_se <- function(x, W_mat) {
+  
+  "
+  This function computes SEs of (beta0, beta1, beta2, alpha, sigma_alpha, gamma1, gamma2, gamma3)
+  
+  Arguments:
+  * x: vector with length NX (beta1, beta2, beta3, alpha, sigma_alpha, delta, gamma0, gamma1, gamma2, mc, gd, gs)
+  * W_mat: (LD + LS) x (LD + LS) matrix (weight matrix)
+  
+  # Returns:
+  * se: vector with length (KD + KS)
+  "
+  
+  # Prepare
+  beta_alpha  <- x[c(index_beta, index_alpha)]
+  alpha       <- x[index_alpha]
+  sigma_alpha <- x[index_sigma_alpha]
+  delta       <- x[index_delta]
+  gamma       <- x[index_gamma]
+  mc          <- x[index_mc]
+  
+  # Residuals
+  xi  <- as.vector(delta - XD %*% beta_alpha)
+  eta <- as.vector(mc - XS %*% gamma)
+  
+  # Gradient of delta w.r.t. sigma_alpha
+  ddelta_dsigma <- jac_delta_wrt_sigma_alpha(alpha, sigma_alpha, delta)
+  
+  # Jacobian of stacked moments w.r.t. MPEC structural parameters (beta1, beta2, beta3, alpha, sigma_alpha, gamma0, gamma1, gamma2)
+  Dg <- matrix(0, nrow = LD + LS, ncol = KD + KS)
+  
+  # Demand-side moment
+  Dg[1:LD, 1:KD] <- crossprod(IV, cbind(-XD, ddelta_dsigma)) / N
+  
+  # Supply-side moment
+  Dg[(LD + 1):(LD + LS), (KD + 1):(KD + KS)] <- crossprod(IV, -XS) / N
+  
+  # VC matrix
+  covg <- matrix(0, nrow = LD + LS, ncol = LD + LS)
+  for (i in 1:N) {
+    gi <- c(IV[i, ] * xi[i], IV[i, ] * eta[i])
+    covg <- covg + tcrossprod(gi)
+  }
+  covg <- covg / N
+  
+  bread <- solve(t(Dg) %*% W_mat %*% Dg)
+  meat <- t(Dg) %*% W_mat %*% covg %*% W_mat %*% Dg
+  cov_theta <- bread %*% meat %*% bread / N
+  
+  # Return
+  sqrt(diag(cov_theta))
+}
 
+# Compute SEs
+se_pc <- compute_se(x_hat_pc, W_gmm)
+se_oligopoly <- compute_se(x_hat_oligopoly, W_gmm)
+se_monopoly <- compute_se(x_hat_monopoly, W_gmm)
+
+# Results
+output <- data.frame(
+  parameter          = c("beta1", "beta2", "beta3", "alpha", "sigma_alpha", "gamma0", "gamma1", "gamma2"),
+  true               = c(5, 1, 1, 1, 1, 2, 1, 1),
+  estimate_pc        = x_hat_pc[c(index_beta, index_alpha, index_sigma_alpha, index_gamma)],
+  se_pc              = se_pc,
+  estimate_oligopoly = x_hat_oligopoly[c(index_beta, index_alpha, index_sigma_alpha, index_gamma)],
+  se_oligopoly       = se_oligopoly,
+  estimate_monopoly  = x_hat_monopoly[c(index_beta, index_alpha, index_sigma_alpha, index_gamma)],
+  se_monopoly        = se_monopoly,
+  bias_pc            = x_hat_pc[c(index_beta, index_alpha, index_sigma_alpha, index_gamma)] - c(5, 1, 1, 1, 1, 2, 1, 1),
+  bias_oligopoly     = x_hat_oligopoly[c(index_beta, index_alpha, index_sigma_alpha, index_gamma)] - c(5, 1, 1, 1, 1, 2, 1, 1),
+  bias_monopoly      = x_hat_monopoly[c(index_beta, index_alpha, index_sigma_alpha, index_gamma)] - c(5, 1, 1, 1, 1, 2, 1, 1)
+)
+
+# Print
+print(output, row.names = FALSE)
 
 
