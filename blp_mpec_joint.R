@@ -37,7 +37,7 @@ LD <- 6                             # Number of demand instruments
 LS <- 6                             # Number of supply instruments
 NC <- N + LD + N + LS               # Number of constraints
 NX <- KD + N + KS + N + LD + LS     # Length of x = (beta1, beta2, beta3, alpha, sigma_alpha, delta, gamma0, gamma1, gamma2, mc, gd, gs)
-sigma_alpha0 <- 0.5                   # Initial guess of sigma_alpha
+sigma_alpha0 <- 5                   # Initial guess of sigma_alpha
 
 # Data
 data <- readMat("data/100markets3products.mat")              # Import data
@@ -78,11 +78,6 @@ XS <- cbind(1, w, z)
 # Quasi-random draws for lognormal individual price taste
 u_halton <- as.vector(ghalton(n = R, d = 1))
 nu_sim   <- matrix(qlnorm(u_halton, meanlog = 0, sdlog = 1), nrow = M, ncol = R, byrow = TRUE)
-
-# Convert matrix to vectorized lower triangular matrix
-matrix_to_lower_triangular_vector <- function(A) {
-  unlist(lapply(seq_len(nrow(A)), function(i) A[i, seq_len(i)]), use.names = FALSE)
-}
 
 # Shares and derivatives in one market
 # v = (alpha, sigma_alpha, delta1,...,deltaJ)
@@ -762,7 +757,7 @@ MPEC <- function(conduct = c("pc", "oligopoly", "monopoly"), Wmat) {
       H[idx_m, idx_m] <- H[idx_m, idx_m] + Hm
     }
     
-    # Return
+    # Return vectorized nonzero entries of lower triangular part of Hessian matrix
     unlist(lapply(seq_len(NX), function(i) H[i, h_structure[[i]]]), use.names = FALSE)
   }
   
