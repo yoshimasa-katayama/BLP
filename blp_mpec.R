@@ -2,6 +2,17 @@
 # Dube, Fox, and Su (2012) “Supplement to ‘Improving the Numerical Performance of Static and Dynamic Aggregate Discrete Choice Random Coefficients Demand Estimation’,” Econometrica Supplemental Material.
 # https://www.jp-dube.com/research/MPECcode.html
 
+# Estimate demand parameters (beta1, beta2, beta3, alpha, sigma_alpha)
+#
+# Variables: x = (beta1, beta2, beta3, alpha, sigma_alpha, xi, g)
+# - length of x: K + N + L
+#
+# Objective function: min_x t(g) %*% W %*% g
+#
+# Constraints:
+# - share constraint: s(theta, xi) = s, where theta = (beta1, beta2, beta3, alpha, sigma_alpha)
+# - demand moment:    g = t(IV) %*% xi / N, where xi = delta - beta1 * x1 - beta2 * x2 - beta3 * x3 + alpha * p
+
 # Setup
 rm(list = ls())
 set.seed(1)
@@ -57,18 +68,15 @@ index_theta <- 1:K
 index_xi    <- (K + 1):(K + N)
 index_g     <- (K + N + 1):(K + N + L)
 
-# ipoptr does not take the Jacobian and Hessian directly as matrices.
-# Their sparsity structures must be supplied separately as lists.
-#
-# For each structure list, the i-th element gives the column positions of the nonzero entries in row i.
-#
 # Jacobian:
 # - eval_jac_g_structure() returns the sparsity structure as a list
 # - eval_jac_g() returns a vector containing only the nonzero Jacobian entries, ordered row by row according to eval_jac_g_structure()
 #
 # Hessian:
 # - eval_h_structure() returns the sparsity structure of the lower-triangular part as a list
-# - eval_h() returns a vector containing only the nonzero lower-triangular Hessian entries, ordered row by row according to eval_h_structure()
+# - eval_h() returns a vector containing only the nonzero lower triangular Hessian entries, ordered row by row according to eval_h_structure()
+#
+# For each structure list, the i-th element gives the column positions of the nonzero entries in row i.
 
 # Convert symmetric matrix to a vectorized lower triangular matrix
 matrix_to_lower_triangular_vector <- function(M) {
@@ -236,7 +244,7 @@ eval_h <- function(x, obj_factor, hessian_lambda) {
   # Individual choice probabilities
   T_list <- compute_share_and_jacobian(theta, xi)[["T_list"]]
   
-  # Compute hessian in each market given independence across markets
+  # Hessian of Lagrangian w.r.t. (theta, xi) in each market given independence across markets
   for (m in unique(market)) {
     id       <- which(market == m)
     x1_m     <- x1[id]
@@ -252,22 +260,29 @@ eval_h <- function(x, obj_factor, hessian_lambda) {
     
     # Compute second-order derivatives for each consumer
     for (r in 1:R) {
+      # Individual choice probability
       T_r   <- T_m[, r]
       phi_r <- sum(lambda_m * T_r)
       q_r   <- T_r * (lambda_m - phi_r)
       
+      # Hessian of individual choice probability w.r.t. individual utility
       H_U_r <- diag(q_r) - tcrossprod(T_r, q_r) - tcrossprod(q_r, T_r)
       
+      # Jacobian of individual utility w.r.t. (theta, xi)
       D_r <- cbind(x1_m, x2_m, x3_m, -p_m, -p_m * nu_m[r], diag(J))
       
+      # Hessian of individual choice probability w.r.t. (theta, xi)
       H_m <- H_m + t(D_r) %*% H_U_r %*% D_r / R
     }
     
+    # Fill in Hessian matrix
     H[index_m, index_m] <- H[index_m, index_m] + H_m
   }
   
+  # Hessian of Lagrangian w.r.t. g
   H[index_g, index_g] <- H[index_g, index_g] + obj_factor * (2 * W)
   
+  # Return vectorized lower triangular matrix
   matrix_to_lower_triangular_vector(H)
 }
 
