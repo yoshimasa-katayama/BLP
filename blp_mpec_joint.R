@@ -9,9 +9,9 @@
 # Variables: x = (beta1, beta2, beta3, alpha, sigma_alpha, delta, gamma0, gamma1, gamma2, mc, gd, gs)
 # - length of x: KD + N + KS + N + LD + LS
 #
-# Objective function: min_x t(g) %*% W %*% g, where g = c(gd, gs)
+# Minimize objective function: min_x t(g) %*% W %*% g, where g = c(gd, gs)
 #
-# Constraints:
+# Subject to constraints:
 # - share constraint: s(sigma_alpha, delta) = s
 # - demand moment:    gd = t(IV) %*% xi / N, where xi = delta - beta1 * x1 - beta2 * x2 - beta3 * x3 + alpha * p
 # - supply FOC:       mc = p - markup(alpha, sigma_alpha, delta; conduct)
@@ -349,7 +349,7 @@ start_value <- function(sigma_alpha, conduct = "oligopoly") {
   * conduct: character
   
   Returns:
-  * start_value: vector with length (KD + N + KS + N + LD + LS)
+  * start_value: vector with length NX
   "
   
   # Solve for delta given sigma_alpha by contraction mapping
@@ -864,8 +864,69 @@ jac_delta_wrt_sigma_alpha <- function(alpha, sigma_alpha, delta) {
   jac
 }
 
+# Jacobian of mc w.r.t. alpha and sigma_alpha
+jac_mc_wrt_alpha_sigma <- function(alpha, sigma_alpha, delta, conduct) {
+  
+  "
+  This function computes Jacobian of mc w.r.t. alpha and sigma_alpha.
+  
+  Arguments:
+  * alpha: scalar
+  * sigma_alpha: scalar
+  * delta: vector with length N
+  * conduct: character
+  
+  Returns:
+  * dmc_dalpha: vector with length N (a-st order derivative of mc w.r.t. alpha)
+  * dmc_dsigma: vector with length N (a-st order derivative of mc w.r.t. sigma_alpha)
+  "
+  
+  # Prepare
+  dmc_dalpha <- numeric(N)
+  dmc_dsigma <- numeric(N)
+  
+  # Compute 1-st order derivative of markup w.r.t. alpha and sigma_alpha
+  for (m in unique(market)) {
+    id <- which(market == m)
+    out <- compute_share_and_derivative(alpha, sigma_alpha, delta[id], p[id], nu_sim[m, ])
+    share_m <- out$share
+    D_m     <- out$D
+    nvar_local <- J + 2
+    
+    if (conduct == "pc") {
+      m1 <- vector("list", nvar_local)
+      for (a in seq_len(nvar_local)) m1[[a]] <- rep(0, J)
+    } else {
+      if (conduct == "oligopoly") {
+        D_use  <- diag(diag(D_m))
+        D1_use <- vector("list", nvar_local)
+        for (a in seq_len(nvar_local)) D1_use[[a]] <- diag(diag(out$D1[[a]]))
+      } else if (conduct == "monopoly") {
+        D_use  <- D_m
+        D1_use <- out$D1
+      } else {
+        stop("Unknown conduct")
+      }
+      
+      markup_m <- -solve(D_use, share_m)
+      m1 <- vector("list", nvar_local)
+      for (a in seq_len(nvar_local)) {
+        qa <- out$share1[[a]] + D1_use[[a]] %*% markup_m
+        m1[[a]] <- -solve(D_use, qa)   # d markup / d theta_a
+      }
+    }
+    
+    # mc = p - markup
+    dmc_dalpha[id] <- -m1[[1]]
+    dmc_dsigma[id] <- -m1[[2]]
+  }
+  
+  # Return
+  list(dalpha = dmc_dalpha, dsigma = dmc_dsigma)
+}
+
 # Compute SEs
-compute_se <- function(x, W_mat) {
+compute_se <- function(x, W_mat, conduct) {
   
   "
   This function computes SEs of (beta0, beta1, beta2, alpha, sigma_alpha, gamma1, gamma2, gamma3)
@@ -873,6 +934,7 @@ compute_se <- function(x, W_mat) {
   Arguments:
   * x: vector with length NX (beta1, beta2, beta3, alpha, sigma_alpha, delta, gamma0, gamma1, gamma2, mc, gd, gs)
   * W_mat: (LD + LS) x (LD + LS) matrix (weight matrix)
+  * conduct: character
   
   # Returns:
   * se: vector with length (KD + KS)
@@ -893,6 +955,9 @@ compute_se <- function(x, W_mat) {
   # Gradient of delta w.r.t. sigma_alpha
   ddelta_dsigma <- jac_delta_wrt_sigma_alpha(alpha, sigma_alpha, delta)
   
+  # Gradient of mc w.r.t. alpha and sigma_alpha
+  dmc <- jac_mc_wrt_alpha_sigma(alpha, sigma_alpha, delta, conduct)
+  
   # Jacobian of stacked moments w.r.t. MPEC structural parameters (beta1, beta2, beta3, alpha, sigma_alpha, gamma0, gamma1, gamma2)
   Dg <- matrix(0, nrow = LD + LS, ncol = KD + KS)
   
@@ -900,7 +965,7 @@ compute_se <- function(x, W_mat) {
   Dg[1:LD, 1:KD] <- crossprod(IV, cbind(-XD, ddelta_dsigma)) / N
   
   # Supply-side moment
-  Dg[(LD + 1):(LD + LS), (KD + 1):(KD + KS)] <- crossprod(IV, -XS) / N
+  Dg[(LD + 1):(LD + LS), 1:(KD + KS)] <- cbind(matrix(0, nrow = LS, ncol = KD - 2), crossprod(IV, dmc$dalpha) / N, crossprod(IV, dmc$dsigma) / N, crossprod(IV, -XS) / N)
   
   # VC matrix
   covg <- matrix(0, nrow = LD + LS, ncol = LD + LS)
@@ -919,9 +984,9 @@ compute_se <- function(x, W_mat) {
 }
 
 # Compute SEs
-se_pc <- compute_se(x_hat_pc, W_gmm)
-se_oligopoly <- compute_se(x_hat_oligopoly, W_gmm)
-se_monopoly <- compute_se(x_hat_monopoly, W_gmm)
+se_pc <- compute_se(x_hat_pc, W_gmm, "pc")
+se_oligopoly <- compute_se(x_hat_oligopoly, W_gmm, "oligopoly")
+se_monopoly <- compute_se(x_hat_monopoly, W_gmm, "monopoly")
 
 # Results
 output <- data.frame(
