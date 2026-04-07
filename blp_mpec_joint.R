@@ -88,7 +88,7 @@ compute_share_and_derivative <- function(alpha, sigma_alpha, delta_m, p_m, nu_m)
   
   Arguments:
   * alpha: scalar
-  * sigma_alpha: alpha
+  * sigma_alpha: scalar
   * delta_m: vector with length J (mean utility)
   * p_m: vector with length J (prices)
   * nu_m: vector with length R (individual price taste)
