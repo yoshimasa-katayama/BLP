@@ -780,13 +780,15 @@ MPEC <- function(conduct = c("pc", "oligopoly", "monopoly"), Wmat) {
 }
 
 # Start value
-x0 <- start_value(sigma_alpha0)
+x0_pc <- start_value(sigma_alpha0, "pc")
+x0_oligopoly <- start_value(sigma_alpha0, "oligopoly")
+x0_monopoly <- start_value(sigma_alpha0, "monopoly")
 
 # Weight matrix
 W_gmm <- diag(LD + LS)
 
 # Solve optimization problem
-solve_mpec <- function(conduct = c("pc", "oligopoly", "monopoly"), W_mat) {
+solve_mpec <- function(x0, conduct = c("pc", "oligopoly", "monopoly"), W_mat) {
   
   conduct <- match.arg(conduct)
   
@@ -825,13 +827,13 @@ solve_mpec <- function(conduct = c("pc", "oligopoly", "monopoly"), W_mat) {
 }
 
 # Perfect competition
-x_hat_pc <- solve_mpec("pc", W_gmm)$solution
+x_hat_pc <- solve_mpec(x0_pc, "pc", W_gmm)$solution
 
 # Oligopoly
-x_hat_oligopoly <- solve_mpec("oligopoly", W_gmm)$solution
+x_hat_oligopoly <- solve_mpec(x0_oligopoly, "oligopoly", W_gmm)$solution
 
 # Monopoly
-x_hat_monopoly <- solve_mpec("monopoly", W_gmm)$solution
+x_hat_monopoly <- solve_mpec(x0_monopoly, "monopoly", W_gmm)$solution
 
 # Jacobian of delta w.r.t. sigma_alpha
 jac_delta_wrt_sigma_alpha <- function(alpha, sigma_alpha, delta) {
@@ -865,10 +867,10 @@ jac_delta_wrt_sigma_alpha <- function(alpha, sigma_alpha, delta) {
 }
 
 # Jacobian of mc w.r.t. alpha and sigma_alpha
-jac_mc_wrt_alpha_sigma <- function(alpha, sigma_alpha, delta, conduct) {
+jac_mc_wrt_alpha_sigma_delta <- function(alpha, sigma_alpha, delta, conduct) {
   
   "
-  This function computes Jacobian of mc w.r.t. alpha and sigma_alpha.
+  This function computes Jacobian of mc w.r.t. alpha, sigma_alpha, and delta.
   
   Arguments:
   * alpha: scalar
@@ -877,13 +879,15 @@ jac_mc_wrt_alpha_sigma <- function(alpha, sigma_alpha, delta, conduct) {
   * conduct: character
   
   Returns:
-  * dmc_dalpha: vector with length N (a-st order derivative of mc w.r.t. alpha)
-  * dmc_dsigma: vector with length N (a-st order derivative of mc w.r.t. sigma_alpha)
+  * dmc_dalpha: vector with length N (1-st order derivative of mc w.r.t. alpha)
+  * dmc_dsigma: vector with length N (1-st order derivative of mc w.r.t. sigma_alpha)
+  * dmc_ddelta: list with length M, each element is J x J matrix (1-st order derivative of mc_m w.r.t. delta_m)
   "
   
   # Prepare
   dmc_dalpha <- numeric(N)
   dmc_dsigma <- numeric(N)
+  dmc_ddelta <- vector("list", M)
   
   # Compute 1-st order derivative of markup w.r.t. alpha and sigma_alpha
   for (m in unique(market)) {
@@ -919,10 +923,11 @@ jac_mc_wrt_alpha_sigma <- function(alpha, sigma_alpha, delta, conduct) {
     # mc = p - markup
     dmc_dalpha[id] <- -m1[[1]]
     dmc_dsigma[id] <- -m1[[2]]
+    dmc_ddelta[[m]] <- do.call(cbind, lapply(seq_len(J), function(j) -m1[[j + 2]]))
   }
   
   # Return
-  list(dalpha = dmc_dalpha, dsigma = dmc_dsigma)
+  list(dalpha = dmc_dalpha, dsigma = dmc_dsigma, ddelta = dmc_ddelta)
 }
 
 # Compute SEs
@@ -955,8 +960,15 @@ compute_se <- function(x, W_mat, conduct) {
   # Gradient of delta w.r.t. sigma_alpha
   ddelta_dsigma <- jac_delta_wrt_sigma_alpha(alpha, sigma_alpha, delta)
   
-  # Gradient of mc w.r.t. alpha and sigma_alpha
-  dmc <- jac_mc_wrt_alpha_sigma(alpha, sigma_alpha, delta, conduct)
+  # Gradient of mc w.r.t. alpha, sigma_alpha, and delta
+  dmc <- jac_mc_wrt_alpha_sigma_delta(alpha, sigma_alpha, delta, conduct)
+  
+  # Total derivative of mc w.r.t. sigma_alpha
+  dmc_dsigma <- numeric(N)
+  for (m in unique(market)) {
+    id <- which(market == m)
+    dmc_dsigma[id] <- dmc$dsigma[id] + as.vector(dmc$ddelta[[m]] %*% ddelta_dsigma[id])
+  }
   
   # Jacobian of stacked moments w.r.t. MPEC structural parameters (beta1, beta2, beta3, alpha, sigma_alpha, gamma0, gamma1, gamma2)
   Dg <- matrix(0, nrow = LD + LS, ncol = KD + KS)
@@ -965,18 +977,26 @@ compute_se <- function(x, W_mat, conduct) {
   Dg[1:LD, 1:KD] <- crossprod(IV, cbind(-XD, ddelta_dsigma)) / N
   
   # Supply-side moment
-  Dg[(LD + 1):(LD + LS), 1:(KD + KS)] <- cbind(matrix(0, nrow = LS, ncol = KD - 2), crossprod(IV, dmc$dalpha) / N, crossprod(IV, dmc$dsigma) / N, crossprod(IV, -XS) / N)
+  Dg[(LD + 1):(LD + LS), 1:(KD + KS)] <- cbind(matrix(0, nrow = LS, ncol = KD - 2), crossprod(IV, dmc$dalpha) / N, crossprod(IV, dmc_dsigma) / N, crossprod(IV, -XS) / N)
   
   # VC matrix
-  covg <- matrix(0, nrow = LD + LS, ncol = LD + LS)
-  for (i in 1:N) {
-    gi <- c(IV[i, ] * xi[i], IV[i, ] * eta[i])
-    covg <- covg + tcrossprod(gi)
+  vcovg <- matrix(0, nrow = LD + LS, ncol = LD + LS)
+  #for (i in 1:N) {
+  #  gi <- c(IV[i, ] * xi[i], IV[i, ] * eta[i])
+  #  vcovg <- vcovg + tcrossprod(gi)
+  #}
+  for (m in unique(market)) {
+    id <- which(market == m)
+    gm <- c(
+      colSums(IV[id, , drop = FALSE] * xi[id]),
+      colSums(IV[id, , drop = FALSE] * eta[id])
+    )
+    vcovg <- vcovg + tcrossprod(gm)
   }
-  covg <- covg / N
+  vcovg <- vcovg / N
   
   bread <- solve(t(Dg) %*% W_mat %*% Dg)
-  meat <- t(Dg) %*% W_mat %*% covg %*% W_mat %*% Dg
+  meat <- t(Dg) %*% W_mat %*% vcovg %*% W_mat %*% Dg
   cov_theta <- bread %*% meat %*% bread / N
   
   # Return
